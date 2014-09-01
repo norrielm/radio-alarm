@@ -16,10 +16,14 @@ import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.PendingIntent;
 import android.app.TimePickerDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.media.MediaPlayer;
+import android.media.MediaPlayer.OnCompletionListener;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -41,7 +45,7 @@ import android.widget.Toast;
 public class RadioActivity extends Activity implements OnItemSelectedListener {
 
 	private static final String TAG = "RADIO ALARM";
-	private static final boolean DEBUG = false;
+	private static final boolean DEBUG = true;
 
 	private static final String ALARM_HOUR_OF_DAY = "alarm-hour";
 	private static final String ALARM_MIN = "alarm-min";
@@ -67,6 +71,27 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	private CheckBox alarmCheck;
 	private CheckBox playCheck;
 
+	/**
+	 * Starts the radio once wifi is connected.
+	 */
+	private BroadcastReceiver wifiStateReceiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+		    final String action = intent.getAction();
+		    if (action.equals(WifiManager.NETWORK_STATE_CHANGED_ACTION)) {
+		    	NetworkInfo info = intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO);
+		        boolean connected = info.isConnected();
+		        if (connected) {
+		        	if (DEBUG) Log.d(TAG, "wifi enabled");
+		        	// Start the player.
+		    		if (isAlarmEnabled()) {
+		    			launchPlayer();
+		    		}
+		        }
+		    }
+		}	
+	};
+
 	/** Called when the activity is first created. */
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -86,6 +111,10 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 		spinner.setAdapter(adapter);
 		spinner.setSelection(radioUrl.equals(AUSTRIAN_RADIO_LIVE_STREAM) ? 0 : 1);
 		spinner.setOnItemSelectedListener(this);
+
+		IntentFilter intentFilter = new IntentFilter();
+		intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+		registerReceiver(wifiStateReceiver, intentFilter);
 	}
 
 	@Override
@@ -106,32 +135,27 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	}
 
 	/**
-	 * Start the radio player.
+	 * Start the radio player. Called when the app is launched or play is ticked.
 	 */
 	public void launchPlayer() {
-		if (checkWifiState()) {
-			startPlayer();
+		if (!checkWifiState()) {
+			// Note, a backup should play if this were to be used as an actual alarm.
+			return;
 		}
-	}
-
-	/**
-	 * Initialises a player if necessary. Called when the app is launched or play is ticked.
-	 */
-	private void startPlayer() {
-		if (player == null) {
-			// Initialise Player
-			if (radioUrl.endsWith(".pls")) {
-				// The stream will be initialised once a stream has been found.
-				new PlsParser().execute(radioUrl);
-				Toast.makeText(this, "Locating stream in the playlist...", 
-						Toast.LENGTH_LONG).show();
-				return;
-			} else {
-				initPlayer(radioUrl);
-			}
+		if (player != null) {
+			player.stop();
 		}
-		pause();
-		play();
+		if (DEBUG) Log.d(TAG, "launching player");
+		// Initialise Player
+		if (radioUrl.endsWith(".pls")) {
+			// The stream will be initialised once a stream has been found.
+			new PlsParser().execute(radioUrl);
+			Toast.makeText(this, "Locating stream in the playlist...", 
+					Toast.LENGTH_LONG).show();
+			return;
+		} else {
+			initPlayer(radioUrl);
+		}
 	}
 	
 	/**
@@ -140,8 +164,23 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	private void initPlayer(String url) {
 		try {
 			player = new MediaPlayer();
+	    	player.setOnCompletionListener(new OnCompletionListener() {
+				@Override
+				public void onCompletion(MediaPlayer mp) {
+					if (DEBUG) Log.d(TAG, "Playback complete");
+					player = null;
+					runOnUiThread(new Runnable() {
+						@Override
+						public void run() {
+							playCheck.setChecked(false);
+						}
+					});
+				}
+	    	});
 			player.setDataSource(url);
 			player.prepare();
+	    	play();
+			return;
 		} catch (IllegalArgumentException e) {
 			if (DEBUG) Log.e(TAG, "Failed to init player " + url + " " + e.toString());
 		} catch (IllegalStateException e) {
@@ -149,6 +188,8 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 		} catch (IOException e) {
 			if (DEBUG) Log.e(TAG, "Failed to init player " + url + " " + e.toString());
 		}
+		// If we were unable to load the player, set it to null.
+		player = null;
 	}
 
 	/**
@@ -158,13 +199,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 		if (player == null || !player.isPlaying()) {
 			return;
 		}
-		runOnUiThread(new Runnable() {
-			@Override
-			public void run() {
-				player.pause();
-				playCheck.setChecked(false);
-			}
-		});
+		player.pause();
 	}
 
 	/**
@@ -174,20 +209,29 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 		if (player == null) {
 			return;
 		}
-		runOnUiThread(new Runnable() {
-			@Override
-			public void run() {
-				player.stop();
-				player = null;
-				playCheck.setChecked(false);
-			}
-		});
+		player.stop();
+		player = null;
 	}
 
 	private void play() {
+		if (player == null || player.isPlaying()) {
+			runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					playCheck.setChecked(player != null);
+				}
+			});
+			return;
+		}
 		try {
 			player.start();
-			playCheck.setChecked(true);
+
+			runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					playCheck.setChecked(true);
+				}
+			});
 		} catch (IllegalArgumentException e) {
 			if (DEBUG) Log.e(TAG, "Failed to start player " + radioUrl + " " + e.toString());
 		} catch (IllegalStateException e) {
@@ -198,7 +242,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	/**
 	 * Make sure that WiFi is connected before attempting to stream the radio.
 	 * This method will attempt to connect the WiFi automatically so that it can be turned off
-	 * during the night.  
+	 * during the night.
 	 */
 	private boolean checkWifiState() {
 		WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
@@ -258,7 +302,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 			// Play
 		case R.id.play_checkbox:
 			if (checked) {
-				launchPlayer();
+				play();
 			} else {
 				pause();
 			}
@@ -291,10 +335,15 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	 * Sets an alarm to launch this activity at the given time.
 	 */
 	public void setAlarm(long time) {
+		if (time < System.currentTimeMillis()) {
+			// Time is not in the future
+			return;
+		}
 		AlarmManager manager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
 		Intent radioIntent = new Intent(this, RadioActivity.class);
 		PendingIntent pendingRadioIntent = PendingIntent.getActivity(this, ALARM_REQUEST_CODE, 
-				radioIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+				radioIntent, PendingIntent.FLAG_CANCEL_CURRENT | Intent.FLAG_ACTIVITY_NEW_TASK | 
+				Intent.FLAG_ACTIVITY_CLEAR_TASK);
 		manager.set(AlarmManager.RTC_WAKEUP, time, pendingRadioIntent);
 	}
 
@@ -305,7 +354,8 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 		AlarmManager manager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
 		Intent radioIntent = new Intent(this, RadioActivity.class);
 		PendingIntent pendingRadioIntent = PendingIntent.getActivity(this, ALARM_REQUEST_CODE, 
-				radioIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+				radioIntent, PendingIntent.FLAG_CANCEL_CURRENT | Intent.FLAG_ACTIVITY_NEW_TASK | 
+				Intent.FLAG_ACTIVITY_CLEAR_TASK);
 		manager.cancel(pendingRadioIntent);
 	}
 
@@ -432,10 +482,10 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 	 * 
 	 * Based on the NPR PlsParser: https://code.google.com/p/npr-android-app/
 	 */
-	public class PlsParser extends AsyncTask<String, Void, String> {
+	public class PlsParser extends AsyncTask<String, Void, Void> {
 
 		@Override
-		protected String doInBackground(String... params) {
+		protected Void doInBackground(String... params) {
 			String url = params[0];
 			URLConnection urlConnection;
 			try {
@@ -444,27 +494,16 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 						new BufferedReader(new InputStreamReader(urlConnection.getInputStream()));
 				String result = getUrls(reader).get(0);
 				if (DEBUG) Log.d(TAG, "Got stream " + result);
+				// Initialise the stream
 				initPlayer(result);
-				return result;
+				if (DEBUG) Log.d(TAG, "Playing...");
+				return null;
 			} catch (MalformedURLException e) {
-				if (DEBUG) Log.e(TAG, "Failed to init player " + radioUrl + " " + e.toString());
+				if (DEBUG) Log.e(TAG, "Failed to parse url " + radioUrl + " " + e.toString());
 			} catch (IOException e) {
-				if (DEBUG) Log.e(TAG, "Failed to init player " + radioUrl + " " + e.toString());
+				if (DEBUG) Log.e(TAG, "Failed to parse url " + radioUrl + " " + e.toString());
 			}
 			return null;
-		}
-
-		protected void onPostExecute(String result) {			
-			// Now that we have found a stream, play it.
-			runOnUiThread(new Runnable() {
-				@Override
-				public void run() {
-					Toast.makeText(RadioActivity.this, "Radio stream loaded", 
-							Toast.LENGTH_SHORT).show();
-					pause();
-					play();
-				}
-			});
 		}
 
 		public List<String> getUrls(BufferedReader reader) {
@@ -481,7 +520,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener {
 						urls.add(url);
 					}
 				} catch (IOException e) {
-					if (DEBUG) Log.e(TAG, "Failed to init player " + radioUrl + " " + e.toString());
+					if (DEBUG) Log.e(TAG, "Failed to parse playlist" + radioUrl + " " + e.toString());
 				}
 			}
 			return urls;
