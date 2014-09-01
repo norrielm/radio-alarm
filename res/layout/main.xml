@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/radio">
+
+    <TextView
+        android:id="@+id/alarmText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Setting the radio alarm..." />
+
+    <TextView
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="Chosen radio stream:" />
+
+	<Spinner
+	    android:id="@+id/radio_url_spinner"
+	    android:layout_width="fill_parent"
+	    android:layout_height="wrap_content" />
+
+
+	<Button 
+	    android:layout_width="match_parent" 
+	    android:layout_height="wrap_content"
+	    android:text="Pick radio alarm time" 
+	    android:onClick="showTimePickerDialog" />
+
+	<CheckBox android:id="@+id/play_checkbox"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:text="Play now"
+		android:onClick="onCheckboxClicked"/>
+
+	<CheckBox android:id="@+id/alarm_checkbox"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:text="Enable alarm"
+		android:onClick="onCheckboxClicked"/>
+
+</LinearLayout>
