@@ -75,7 +75,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener, R
 		        	if (DEBUG) Log.d(TAG, "wifi enabled");
 		        	// Start the player.
 		    		if (isAlarmEnabled()) {
-		    			mRadio.launchPlayer();
+		    			mRadio.play();
 		    		}
 		        }
 		    }
@@ -122,7 +122,7 @@ public class RadioActivity extends Activity implements OnItemSelectedListener, R
         	if (DEBUG) Log.d(TAG, "Started by alarm");
 			// Start the player.
 			if (isAlarmEnabled() && checkWifiState()) {
-				mRadio.launchPlayer();
+				mRadio.play();
 			} // Note, a backup should play if this were to be used as an actual alarm.
 			// An alarm has gone off. Now set the alarm for the next time.
 			enableNextAlarm();
@@ -308,8 +308,9 @@ public class RadioActivity extends Activity implements OnItemSelectedListener, R
 		radioUrl = RADIO_URLS[position];
 		if (DEBUG) Log.d(TAG, "url selected: " + radioUrl);
 		storeChosenUrl(radioUrl);
+		mRadio.setRadioUrl(radioUrl);
 		mRadio.stop();
-		mRadio.launchPlayer();
+		mRadio.play();
 	}
 
 	@Override

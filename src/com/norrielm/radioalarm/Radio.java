@@ -4,12 +4,13 @@ import java.io.IOException;
 
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
+import android.media.MediaPlayer.OnPreparedListener;
 import android.util.Log;
 
 /**
  * Handles the functionality of the MediaPlayer.
  */
-public class Radio implements PlsParser.UrlMatchHandler {
+public class Radio implements PlsParser.UrlMatchHandler, OnPreparedListener {
 
 	private static final String TAG = "RADIO ALARM";
 	private static final boolean DEBUG = false;
@@ -30,10 +31,13 @@ public class Radio implements PlsParser.UrlMatchHandler {
 		this.mPlayingHandler = handler;
 	}
 
+	public void setRadioUrl(String radioUrl) {
+		this.mRadioUrl = radioUrl;
+	}
 	/**
 	 * Start the radio player. Called when the app is launched or play is ticked.
 	 */
-	public void launchPlayer() {
+	private void launchPlayer() {
 		if (DEBUG) Log.d(TAG, "launching player");
 		// Initialise Player
 		if (mRadioUrl.endsWith(".pls")) {
@@ -52,8 +56,11 @@ public class Radio implements PlsParser.UrlMatchHandler {
 	}
 
 	public void play() {
-		// Check that they player has been initialised with a stream, and is not already playing.
-		if (mPlayer == null || mPlayer.isPlaying()) {
+		if (mPlayer == null) {
+			// Initialise the player with a stream. It will play once initialised.
+			launchPlayer();
+			return;
+		} else if (mPlayer.isPlaying()) {
 			mPlayingHandler.onPlaying(mPlayer != null);
 			return;
 		}
@@ -111,9 +118,8 @@ public class Radio implements PlsParser.UrlMatchHandler {
 				}
 	    	});
 			mPlayer.setDataSource(url);
-			// Block until we can play.
-			mPlayer.prepare();
-	    	play();
+			mPlayer.setOnPreparedListener(this);
+			mPlayer.prepareAsync();
 			return;
 		} catch (IllegalArgumentException e) {
 			if (DEBUG) Log.e(TAG, "Failed to init player " + url + " " + e.toString());
@@ -125,5 +131,10 @@ public class Radio implements PlsParser.UrlMatchHandler {
 		// We were unable to initialise the player due to an exception.
 		mPlayer = null;
 		mPlayingHandler.onPlaying(false);
+	}
+
+	@Override
+	public void onPrepared(MediaPlayer mp) {
+		play();
 	}
 }
